@@ -6,6 +6,7 @@
     <title>Aero-Terra Couriers</title>
     
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 
@@ -30,7 +31,7 @@
 
 <script>
     // ==========================================
-    // 1. FIREBASE SETUP
+    // 1. FIREBASE SETUP & PLAYER IDENTITY
     // ==========================================
     const firebaseConfig = {
         apiKey: "AIzaSyBpf5wi0wShnatqUhcmPhSOdnd0NdBL65A",
@@ -68,54 +69,46 @@
     function create() {
         const scene = this;
 
-        // 1. Build the World
+        // 1. Build the World Background
         scene.physics.world.setBounds(0, 0, 1800, 1200);
         scene.add.grid(900, 600, 1800, 1200, 50, 50, 0x222222).setAltFillStyle(0x2a2a2a);
 
-        // --- NEW: LAYER 3 ENVIRONMENT ---
-        
-        // A. The Ice Lake (East)
+        // 2. Build the Biomes
         iceZone = scene.add.rectangle(1500, 600, 600, 600, 0x00aaff, 0.3);
         scene.physics.add.existing(iceZone, true);
 
-        // B. The Wind Canyon (North)
         windZone = scene.add.rectangle(900, 200, 600, 400, 0xffffff, 0.1);
         scene.physics.add.existing(windZone, true);
 
-        // C. The Walls (Solid boundaries)
+        // 3. Build the Solid Walls
         walls = scene.physics.add.staticGroup();
-        
         function buildWall(x, y, width, height) {
             const rect = scene.add.rectangle(x, y, width, height, 0x555555);
             walls.add(rect);
         }
-
-        // Walls separating Hub from Wind Canyon (Leaves a gap in the middle)
+        // North Walls (To Wind Canyon)
         buildWall(700, 400, 400, 20); 
         buildWall(1100, 400, 400, 20);
-
-        // Walls separating Hub from Ice Lake (Leaves a gap in the middle)
+        // East Walls (To Ice Lake)
         buildWall(1200, 450, 20, 300);
         buildWall(1200, 750, 20, 300);
 
-        // --------------------------------
-
-        // 3. Create MY Player (Starts in the Hub at 900, 600)
+        // 4. Create the Player
         player = scene.add.rectangle(900, 600, 30, 30, 0x00ffcc);
         scene.physics.add.existing(player);
         player.body.setCollideWorldBounds(true);
         player.body.setMaxVelocity(300);
         player.oldPosition = { x: player.x, y: player.y };
 
-        // --- NEW: Wall Collisions ---
+        // Turn on Wall Collisions
         scene.physics.add.collider(player, walls);
 
-        // 4. Camera & Controls
+        // 5. Camera & Controls
         scene.cameras.main.setBounds(0, 0, 1800, 1200);
         scene.cameras.main.startFollow(player, true, 0.1, 0.1);
         cursors = scene.input.keyboard.createCursorKeys();
 
-        // 5. Multiplayer Listeners
+        // 6. Multiplayer Listeners
         playersRef.on('value', (snapshot) => {
             const playersData = snapshot.val() || {};
             let onlineCount = 0;
@@ -146,31 +139,26 @@
     function update() {
         if (!player) return;
 
-        // 1. Base Movement
+        // 1. SCIENCE MECHANICS: Check Environment
+        const onIce = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), iceZone.getBounds());
+        const inWind = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), windZone.getBounds());
+
+        // A. Apply Friction (Drag)
+        player.body.setDrag(onIce ? 50 : 1500);
+
+        // B. Apply Air Resistance (Wind Force pushing South)
+        const windForce = inWind ? 1200 : 0;
+
+        // 2. MOVEMENT LOGIC (Combining Engine Force + Wind Force)
         if (cursors.left.isDown) player.body.setAccelerationX(-1500);
         else if (cursors.right.isDown) player.body.setAccelerationX(1500);
         else player.body.setAccelerationX(0);
 
-        if (cursors.up.isDown) player.body.setAccelerationY(-1500);
-        else if (cursors.down.isDown) player.body.setAccelerationY(1500);
-        else player.body.setAccelerationY(0);
+        if (cursors.up.isDown) player.body.setAccelerationY(-1500 + windForce);
+        else if (cursors.down.isDown) player.body.setAccelerationY(1500 + windForce);
+        else player.body.setAccelerationY(0 + windForce); // Wind pushes even when keys are released!
 
-        // --- NEW: SCIENCE MECHANICS (Physics Interactions) ---
-
-        // A. Friction (Ice Zone)
-        const onIce = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), iceZone.getBounds());
-        player.body.setDrag(onIce ? 50 : 1500);
-
-        // B. Air Resistance (Wind Canyon)
-        const inWind = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), windZone.getBounds());
-        if (inWind) {
-            // The wind is howling South! Push the player backward.
-            player.body.velocity.y += 18; 
-        }
-
-        // -----------------------------------------------------
-
-        // 3. Multiplayer Broadcaster
+        // 3. MULTIPLAYER BROADCASTER
         const xChanged = Math.abs(player.x - player.oldPosition.x) > 1;
         const yChanged = Math.abs(player.y - player.oldPosition.y) > 1;
 
@@ -180,6 +168,9 @@
         }
     }
 
+    // ==========================================
+    // 3. PHASER BOOTSTRAP
+    // ==========================================
     const config = {
         type: Phaser.AUTO,
         width: 800,
@@ -187,7 +178,7 @@
         parent: 'game-container',
         physics: {
             default: 'arcade',
-            arcade: { gravity: { y: 0 }, debug: false } // Change debug to true to see hitboxes!
+            arcade: { gravity: { y: 0 }, debug: false } 
         },
         scene: { preload: preload, create: create, update: update }
     };
