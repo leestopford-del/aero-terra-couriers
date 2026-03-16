@@ -6,55 +6,49 @@
     <title>Aero-Terra Couriers</title>
     
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
-    
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 
     <style>
-        body { margin: 0; padding: 0; background: #1a1a1a; display: flex; justify-content: center; align-items: center; height: 100vh; color: white; font-family: sans-serif; }
-        #game-container { border: 4px solid #fff; box-shadow: 0 0 20px #00ffcc; border-radius: 8px; overflow: hidden; position: relative; }
-        #ui { position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; border: 2px solid #00ffcc; pointer-events: auto; z-index: 100; }
-        .biome-text { font-size: 0.8rem; color: #888; margin-top: 5px; }
+        /* Removed the borders and set the body to fill the screen */
+        body { margin: 0; padding: 0; background: #1a1a1a; overflow: hidden; color: white; font-family: sans-serif; }
+        #game-container { width: 100vw; height: 100vh; }
         
-        .equip-btn { display: block; width: 100%; margin-top: 15px; padding: 8px; background: #222; color: #fff; border: 1px solid #777; border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.2s; }
-        .equip-btn:hover { background: #444; }
-        .equip-btn.active { background: #ffaa00; color: #000; border-color: #ffaa00; box-shadow: 0 0 10px #ffaa00; }
-
-        /* NEW: Dialogue Box UI */
-        #dialogue-box {
-            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-            width: 600px; background: rgba(20, 20, 40, 0.95); border: 2px solid #aa00ff;
-            border-radius: 8px; padding: 20px; display: none; /* Hidden by default */
-            z-index: 200; box-shadow: 0 5px 20px rgba(0,0,0,0.8);
-        }
-        #dialogue-speaker { font-weight: bold; color: #aa00ff; margin-bottom: 5px; text-transform: uppercase; }
-        #dialogue-text { font-size: 1.1rem; line-height: 1.4; margin-bottom: 15px; }
-        #dialogue-next { background: #aa00ff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; float: right; font-weight: bold; }
-        #dialogue-next:hover { background: #cc44ff; }
+        #ui { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; border: 2px solid #00ffcc; z-index: 100; pointer-events: none; }
+        #inventory { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; border: 2px solid #ffcc00; z-index: 100; }
+        .equip-btn { display: block; width: 100%; margin: 5px 0; padding: 8px; background: #333; color: white; border: 1px solid #777; cursor: pointer; border-radius: 4px; }
+        .equip-btn.active { background: #ffcc00; color: black; font-weight: bold; }
+        
+        #dialogue-box { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); width: 600px; background: rgba(0,0,0,0.9); border: 2px solid #fff; padding: 15px; border-radius: 8px; display: none; z-index: 100; text-align: center; font-size: 1.1rem; }
     </style>
 </head>
 <body>
 
+    <div id="game-container"></div>
+
     <div id="ui">
         <h3 style="margin: 0; color: #00ffcc;">Aero-Terra Couriers</h3>
-        <p>Use <b>Arrow Keys</b> to drive.</p>
         <p id="player-count">Couriers Online: 1</p>
-        <div class="biome-text">East: Ice Lake (Friction)</div>
-        <div class="biome-text">North: Wind Canyon (Air Resistance)</div>
-        <button id="btn-shell" class="equip-btn">Equip Streamlined Shell</button>
+        <p style="color: #ff4444; font-weight: bold;" id="mission-status">Mission: Pick up the Package</p>
+        <p>Score: <span id="score">0</span></p>
+    </div>
+
+    <div id="inventory">
+        <h4 style="margin: 0 0 10px 0; color: #ffcc00;">Garage (Equip)</h4>
+        <button class="equip-btn active" onclick="equipItem('none')">Standard Tires</button>
+        <button class="equip-btn" onclick="equipItem('shell')">Streamlined Shell (Wind)</button>
+        <button class="equip-btn" onclick="equipItem('cleats')">Spiked Cleats (Ice)</button>
+        <button class="equip-btn" onclick="equipItem('hull')">Boat Hull (Water)</button>
     </div>
 
     <div id="dialogue-box">
-        <div id="dialogue-speaker">Weather Station NPC</div>
-        <div id="dialogue-text">...</div>
-        <button id="dialogue-next">Next</button>
+        <span id="dialogue-text">...</span>
+        <br><small style="color: #aaa;">(Press SPACEBAR to continue)</small>
     </div>
-
-    <div id="game-container"></div>
 
 <script>
     // ==========================================
-    // 1. FIREBASE SETUP
+    // 1. GAME STATE & FIREBASE
     // ==========================================
     const firebaseConfig = {
         apiKey: "AIzaSyBpf5wi0wShnatqUhcmPhSOdnd0NdBL65A",
@@ -67,100 +61,100 @@
     };
     if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
     const db = firebase.database();
+
     let myId = sessionStorage.getItem('aeroId');
     if (!myId) { myId = 'Courier_' + Math.random().toString(36).substr(2, 6); sessionStorage.setItem('aeroId', myId); }
     const playersRef = db.ref('aero_terra/players');
     playersRef.child(myId).onDisconnect().remove();
 
-    // ==========================================
-    // 2. DIALOGUE SYSTEM LOGIC
-    // ==========================================
-    const dialogueBox = document.getElementById('dialogue-box');
-    const dialogueText = document.getElementById('dialogue-text');
-    const dialogueNext = document.getElementById('dialogue-next');
-    
-    // The 3-Tier Scaffolding Array
+    let currentEquip = 'none';
+    let hasPackage = false;
+    let score = 0;
+    let isSpinningOut = false; // NEW: Prevents movement while failing a hazard
+
+    function equipItem(itemName) {
+        currentEquip = itemName;
+        document.querySelectorAll('.equip-btn').forEach(btn => btn.classList.remove('active'));
+        event.target.classList.add('active');
+    }
+
+    let dialogueStep = 0;
     const npcLines = [
-        "Whoa there, Courier! Take a look at those flags. That wind is howling straight down the canyon.",
-        "If you drive a standard, bulky rig in there, the Air Resistance is going to catch your flat panels and push you right back out.",
-        "You need to reduce your surface area! Use your computer to equip a Streamlined Shell so you can slice through the air."
+        "The wind in the northern canyon is fierce! Standard vehicles get blown away.",
+        "Air resistance pushes against objects. The wider the object, the harder the push.",
+        "Equip the Streamlined Shell from your garage so the air flows around you smoothly!"
     ];
-    let currentLineIndex = 0;
-    let isDialogueActive = false;
-
-    dialogueNext.addEventListener('click', () => {
-        currentLineIndex++;
-        if (currentLineIndex < npcLines.length) {
-            dialogueText.innerText = npcLines[currentLineIndex];
-        } else {
-            // End of dialogue
-            dialogueBox.style.display = 'none';
-            isDialogueActive = false;
-        }
-        // Return focus to the game window so arrow keys work immediately
-        document.getElementById('game-container').querySelector('canvas').focus();
-    });
 
     // ==========================================
-    // 3. PHASER GAME LOGIC
+    // 2. PHASER ENGINE
     // ==========================================
-    let player; let cursors; let iceZone; let windZone; let walls; let npc; let otherPlayers = {}; 
-    let hasStreamlinedShell = false;
+    let player, cursors, spacebar;
+    let iceZone, windZone, waterZone;
+    let packageObj, dropZoneObj, npcObj;
+    let walls;
+    let otherPlayers = {}; 
 
     function preload() { }
 
     function create() {
         const scene = this;
 
-        // Background
-        scene.physics.world.setBounds(0, 0, 1800, 1200);
-        scene.add.grid(900, 600, 1800, 1200, 50, 50, 0x222222).setAltFillStyle(0x2a2a2a);
+        // 1. Build the MASSIVE World (6000 x 6000)
+        scene.physics.world.setBounds(0, 0, 6000, 6000);
+        scene.add.grid(3000, 3000, 6000, 6000, 100, 100, 0x222222).setAltFillStyle(0x2a2a2a);
 
-        // Biomes
-        iceZone = scene.add.rectangle(1500, 600, 600, 600, 0x00aaff, 0.3);
+        // 2. Massive Biomes
+        // Hub is at the center (3000, 3000)
+        windZone = scene.add.rectangle(3000, 1000, 2000, 2000, 0xffffff, 0.1); // North
+        iceZone = scene.add.rectangle(5000, 3000, 2000, 2000, 0x00aaff, 0.3); // East
+        waterZone = scene.add.rectangle(3000, 5000, 2000, 2000, 0x0044ff, 0.4); // South
+        
         scene.physics.add.existing(iceZone, true);
-        windZone = scene.add.rectangle(900, 200, 600, 400, 0xffffff, 0.1);
         scene.physics.add.existing(windZone, true);
+        scene.physics.add.existing(waterZone, true);
 
-        // Walls
+        // 3. Funneling Walls (Leaving gaps to enter zones)
         walls = scene.physics.add.staticGroup();
-        function buildWall(x, y, width, height) { walls.add(scene.add.rectangle(x, y, width, height, 0x555555)); }
-        buildWall(700, 400, 400, 20); 
-        buildWall(1100, 400, 400, 20);
-        buildWall(1200, 450, 20, 300);
-        buildWall(1200, 750, 20, 300);
+        function buildWall(x, y, w, h) { walls.add(scene.add.rectangle(x, y, w, h, 0x555555)); }
+        
+        buildWall(2200, 2000, 1600, 40); // North Wall L
+        buildWall(3800, 2000, 1600, 40); // North Wall R
+        buildWall(4000, 2200, 40, 1600); // East Wall T
+        buildWall(4000, 3800, 40, 1600); // East Wall B
+        buildWall(2200, 4000, 1600, 40); // South Wall L
+        buildWall(3800, 4000, 1600, 40); // South Wall R
 
-        // --- NEW: Create the NPC (Purple Square) ---
-        // Placed right in front of the gap to the wind canyon
-        npc = scene.add.rectangle(900, 450, 30, 30, 0xaa00ff);
-        scene.physics.add.existing(npc, true); // true = static (player can't push them)
+        // 4. Core Loop Objects
+        packageObj = scene.add.rectangle(2900, 3100, 40, 40, 0x00ff00); // Hub center
+        scene.physics.add.existing(packageObj, true);
 
-        // Create Player
-        player = scene.add.rectangle(900, 600, 30, 30, 0x00ffcc);
+        dropZoneObj = scene.add.rectangle(3000, 500, 150, 150, 0xaa00ff, 0.5); // Deep in Wind Canyon
+        scene.physics.add.existing(dropZoneObj, true);
+
+        // 5. The NPC (Positioned near the North Canyon entrance)
+        npcObj = scene.add.rectangle(2850, 2200, 50, 50, 0xffff00);
+        scene.physics.add.existing(npcObj, true);
+        scene.add.text(2800, 2150, "NPC (Press Space)", { fontSize: '16px', fill: '#fff' });
+
+        // 6. The Player
+        player = scene.add.rectangle(3000, 3000, 50, 50, 0x00ffcc);
         scene.physics.add.existing(player);
         player.body.setCollideWorldBounds(true);
-        player.body.setMaxVelocity(300);
-        player.oldPosition = { x: player.x, y: player.y, color: 0x00ffcc };
+        player.body.setMaxVelocity(400); // Slightly faster max speed for the larger map
+        player.oldPosition = { x: player.x, y: player.y };
 
-        // Collisions
         scene.physics.add.collider(player, walls);
-        scene.physics.add.collider(player, npc); // Player will bump into the NPC
 
-        // Camera & Controls
-        scene.cameras.main.setBounds(0, 0, 1800, 1200);
+        // 7. Inputs & Camera
+        scene.cameras.main.setBounds(0, 0, 6000, 6000);
         scene.cameras.main.startFollow(player, true, 0.1, 0.1);
+        // Zoom camera in slightly so the world feels bigger
+        scene.cameras.main.setZoom(1.2); 
+        
         cursors = scene.input.keyboard.createCursorKeys();
+        spacebar = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
-        // UI Button Listener
-        document.getElementById('btn-shell').addEventListener('click', (e) => {
-            hasStreamlinedShell = !hasStreamlinedShell;
-            e.target.classList.toggle('active');
-            if (hasStreamlinedShell) { player.setFillStyle(0xffaa00); player.colorState = 0xffaa00; } 
-            else { player.setFillStyle(0x00ffcc); player.colorState = 0x00ffcc; }
-            document.getElementById('game-container').querySelector('canvas').focus();
-        });
-
-        // Multiplayer Listener
+        // Multiplayer Sync (Unchanged)
         playersRef.on('value', (snapshot) => {
             const playersData = snapshot.val() || {};
             let onlineCount = 0;
@@ -168,8 +162,8 @@
                 onlineCount++;
                 const data = playersData[id];
                 if (id !== myId) {
-                    if (!otherPlayers[id]) { otherPlayers[id] = scene.add.rectangle(data.x, data.y, 30, 30, data.color || 0xff4444); } 
-                    else { otherPlayers[id].setPosition(data.x, data.y); if (data.color) otherPlayers[id].setFillStyle(data.color); }
+                    if (!otherPlayers[id]) { otherPlayers[id] = scene.add.rectangle(data.x, data.y, 50, 50, 0xff4444); } 
+                    else { otherPlayers[id].setPosition(data.x, data.y); }
                 }
             });
             document.getElementById('player-count').innerText = `Couriers Online: ${onlineCount}`;
@@ -179,57 +173,136 @@
         });
     }
 
+    // NEW: The Hazard Spin-Out Function
+    function triggerHazardFailure(scene, hazardName, safeX, safeY) {
+        if (isSpinningOut) return;
+        isSpinningOut = true;
+
+        // Flash warning
+        document.getElementById('mission-status').innerText = `HAZARD: Missing equipment for ${hazardName}!`;
+        document.getElementById('mission-status').style.color = "#ff4444";
+
+        // Stop moving and start spinning
+        player.body.setAcceleration(0, 0);
+        player.body.setVelocity(0, 0);
+        player.body.setAngularVelocity(1000); 
+
+        // Bounce back to safe coordinates
+        scene.tweens.add({
+            targets: player,
+            x: safeX,
+            y: safeY,
+            duration: 800,
+            ease: 'Power2',
+            onComplete: () => {
+                player.body.setAngularVelocity(0);
+                player.angle = 0;
+                isSpinningOut = false;
+                
+                // Reset mission text
+                if (hasPackage) {
+                    document.getElementById('mission-status').innerText = "Mission: Deliver to the Purple Zone!";
+                    document.getElementById('mission-status').style.color = "#00ffcc";
+                } else {
+                    document.getElementById('mission-status').innerText = "Mission: Pick up the Package";
+                    document.getElementById('mission-status').style.color = "#ff4444";
+                }
+            }
+        });
+    }
+
     function update() {
         if (!player) return;
 
-        // --- NEW: NPC Proximity Check ---
-        // Calculate the distance between the player and the NPC
-        const distanceToNPC = Phaser.Math.Distance.Between(player.x, player.y, npc.x, npc.y);
-        
-        // If within 100 pixels, and the dialogue hasn't been triggered yet
-        if (distanceToNPC < 100 && !isDialogueActive && currentLineIndex === 0) {
-            isDialogueActive = true;
-            dialogueBox.style.display = 'block';
-            dialogueText.innerText = npcLines[0];
-        } 
-        // If the player drives away, reset the conversation
-        else if (distanceToNPC >= 100) {
-            isDialogueActive = false;
-            dialogueBox.style.display = 'none';
-            currentLineIndex = 0; // Reset so they can talk to the NPC again later
-        }
-
-        // 1. ENVIRONMENT CHECK
+        // --- HAZARD CHECKS (Hard Physics) ---
         const onIce = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), iceZone.getBounds());
         const inWind = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), windZone.getBounds());
+        const inWater = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), waterZone.getBounds());
+        
+        // If they fail a hazard, trigger the spin-out and skip player inputs
+        if (onIce && currentEquip !== 'cleats') {
+            triggerHazardFailure(this, 'ICE', 3800, 3000); // Bounce to center-right hub
+            return; 
+        }
+        if (inWind && currentEquip !== 'shell') {
+            triggerHazardFailure(this, 'AIR RESISTANCE', 3000, 2200); // Bounce to top hub
+            return;
+        }
+        if (inWater && currentEquip !== 'hull') {
+            triggerHazardFailure(this, 'WATER RESISTANCE', 3000, 3800); // Bounce to bottom hub
+            return;
+        }
 
-        // A. Friction
-        player.body.setDrag(onIce ? 50 : 1500);
+        // If currently spinning out, ignore arrow keys
+        if (isSpinningOut) return;
 
-        // B. Air Resistance
-        const windForce = inWind ? (hasStreamlinedShell ? 200 : 1200) : 0;
+        // --- NORMAL MOVEMENT LOGIC ---
+        player.body.setDrag(1500); // Standard friction
 
-        // 2. MOVEMENT LOGIC
-        if (cursors.left.isDown) player.body.setAccelerationX(-1500);
-        else if (cursors.right.isDown) player.body.setAccelerationX(1500);
+        if (cursors.left.isDown) player.body.setAccelerationX(-2000);
+        else if (cursors.right.isDown) player.body.setAccelerationX(2000);
         else player.body.setAccelerationX(0);
 
-        if (cursors.up.isDown) player.body.setAccelerationY(-1500 + windForce);
-        else if (cursors.down.isDown) player.body.setAccelerationY(1500 + windForce);
-        else player.body.setAccelerationY(0 + windForce);
+        if (cursors.up.isDown) player.body.setAccelerationY(-2000);
+        else if (cursors.down.isDown) player.body.setAccelerationY(2000);
+        else player.body.setAccelerationY(0);
 
-        // 3. MULTIPLAYER BROADCASTER
+        // --- CORE LOOP: PACKAGES & DELIVERIES ---
+        const touchingPackage = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), packageObj.getBounds());
+        const touchingDropZone = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), dropZoneObj.getBounds());
+
+        if (touchingPackage && !hasPackage) {
+            hasPackage = true;
+            packageObj.setVisible(false);
+            document.getElementById('mission-status').innerText = "Mission: Deliver to the Purple Zone!";
+            document.getElementById('mission-status').style.color = "#00ffcc";
+        }
+
+        if (touchingDropZone && hasPackage) {
+            hasPackage = false;
+            score++;
+            document.getElementById('score').innerText = score;
+            document.getElementById('mission-status').innerText = "Mission: Return to Hub for next package";
+            document.getElementById('mission-status').style.color = "#ff4444";
+            setTimeout(() => { packageObj.setVisible(true); }, 2000);
+        }
+
+        // --- NPC DIALOGUE SYSTEM ---
+        const distanceToNPC = Phaser.Math.Distance.Between(player.x, player.y, npcObj.x, npcObj.y);
+        const dialogueBox = document.getElementById('dialogue-box');
+        if (distanceToNPC < 150) {
+            dialogueBox.style.display = 'block';
+            document.getElementById('dialogue-text').innerText = npcLines[dialogueStep];
+            if (Phaser.Input.Keyboard.JustDown(spacebar)) {
+                dialogueStep++;
+                if (dialogueStep >= npcLines.length) { dialogueStep = 0; }
+            }
+        } else {
+            dialogueBox.style.display = 'none';
+            dialogueStep = 0;
+        }
+
+        // --- MULTIPLAYER SYNC ---
         const xChanged = Math.abs(player.x - player.oldPosition.x) > 1;
         const yChanged = Math.abs(player.y - player.oldPosition.y) > 1;
-        const colorChanged = player.colorState !== player.oldPosition.color;
-
-        if (xChanged || yChanged || colorChanged) {
-            playersRef.child(myId).set({ x: player.x, y: player.y, color: player.colorState || 0x00ffcc });
-            player.oldPosition = { x: player.x, y: player.y, color: player.colorState };
+        if (xChanged || yChanged) {
+            playersRef.child(myId).set({ x: player.x, y: player.y });
+            player.oldPosition = { x: player.x, y: player.y };
         }
     }
 
-    const config = { type: Phaser.AUTO, width: 800, height: 600, parent: 'game-container', physics: { default: 'arcade', arcade: { gravity: { y: 0 }, debug: false } }, scene: { preload: preload, create: create, update: update } };
+    const config = {
+        type: Phaser.AUTO,
+        scale: {
+            mode: Phaser.Scale.RESIZE, // Automatically fits to browser window
+            parent: 'game-container',
+            width: '100%',
+            height: '100%'
+        },
+        physics: { default: 'arcade', arcade: { gravity: { y: 0 }, debug: false } },
+        scene: { preload: preload, create: create, update: update }
+    };
+
     const game = new Phaser.Game(config);
 </script>
 </body>
