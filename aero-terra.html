@@ -10,8 +10,8 @@
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 
     <style>
-        /* Removed the borders and set the body to fill the screen */
-        body { margin: 0; padding: 0; background: #1a1a1a; overflow: hidden; color: white; font-family: sans-serif; }
+        /* Removed all the margins/borders so it fills the screen completely */
+        body { margin: 0; padding: 0; background: #000; overflow: hidden; color: white; font-family: sans-serif; }
         #game-container { width: 100vw; height: 100vh; }
         
         #ui { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; border: 2px solid #00ffcc; z-index: 100; pointer-events: none; }
@@ -24,26 +24,27 @@
 </head>
 <body>
 
-    <div id="game-container"></div>
+    <div id="game-container">
+        <div id="ui">
+            <h3 style="margin: 0; color: #00ffcc;">Aero-Terra Couriers</h3>
+            <p id="player-count">Couriers Online: 1</p>
+            <p style="color: #ff4444; font-weight: bold;" id="mission-status">Mission: Pick up the Package</p>
+            <p>Score: <span id="score">0</span></p>
+            <p style="color: #ffcc00; font-size: 0.9rem;" id="warning-text"></p>
+        </div>
 
-    <div id="ui">
-        <h3 style="margin: 0; color: #00ffcc;">Aero-Terra Couriers</h3>
-        <p id="player-count">Couriers Online: 1</p>
-        <p style="color: #ff4444; font-weight: bold;" id="mission-status">Mission: Pick up the Package</p>
-        <p>Score: <span id="score">0</span></p>
-    </div>
+        <div id="inventory">
+            <h4 style="margin: 0 0 10px 0; color: #ffcc00;">Garage (Equip)</h4>
+            <button class="equip-btn active" onclick="equipItem('none')">Standard Tires</button>
+            <button class="equip-btn" onclick="equipItem('shell')">Streamlined Shell (Wind)</button>
+            <button class="equip-btn" onclick="equipItem('cleats')">Spiked Cleats (Ice)</button>
+            <button class="equip-btn" onclick="equipItem('hull')">Boat Hull (Water)</button>
+        </div>
 
-    <div id="inventory">
-        <h4 style="margin: 0 0 10px 0; color: #ffcc00;">Garage (Equip)</h4>
-        <button class="equip-btn active" onclick="equipItem('none')">Standard Tires</button>
-        <button class="equip-btn" onclick="equipItem('shell')">Streamlined Shell (Wind)</button>
-        <button class="equip-btn" onclick="equipItem('cleats')">Spiked Cleats (Ice)</button>
-        <button class="equip-btn" onclick="equipItem('hull')">Boat Hull (Water)</button>
-    </div>
-
-    <div id="dialogue-box">
-        <span id="dialogue-text">...</span>
-        <br><small style="color: #aaa;">(Press SPACEBAR to continue)</small>
+        <div id="dialogue-box">
+            <span id="dialogue-text">...</span>
+            <br><small style="color: #aaa;">(Press SPACEBAR to continue)</small>
+        </div>
     </div>
 
 <script>
@@ -70,7 +71,6 @@
     let currentEquip = 'none';
     let hasPackage = false;
     let score = 0;
-    let isSpinningOut = false; // NEW: Prevents movement while failing a hazard
 
     function equipItem(itemName) {
         currentEquip = itemName;
@@ -78,12 +78,12 @@
         event.target.classList.add('active');
     }
 
-    let dialogueStep = 0;
     const npcLines = [
-        "The wind in the northern canyon is fierce! Standard vehicles get blown away.",
+        "The wind in the canyon is howling east! It's too strong for standard engines.",
         "Air resistance pushes against objects. The wider the object, the harder the push.",
-        "Equip the Streamlined Shell from your garage so the air flows around you smoothly!"
+        "Equip the Streamlined Shell in your garage so the air flows around you, allowing your engine to push through!"
     ];
+    let dialogueStep = 0;
 
     // ==========================================
     // 2. PHASER ENGINE
@@ -99,62 +99,60 @@
     function create() {
         const scene = this;
 
-        // 1. Build the MASSIVE World (6000 x 6000)
-        scene.physics.world.setBounds(0, 0, 6000, 6000);
-        scene.add.grid(3000, 3000, 6000, 6000, 100, 100, 0x222222).setAltFillStyle(0x2a2a2a);
+        // 1. Build the Expanded World (Doubled from 1800 to 3600)
+        scene.physics.world.setBounds(0, 0, 3600, 3600);
+        scene.add.grid(1800, 1800, 3600, 3600, 100, 100, 0x222222).setAltFillStyle(0x2a2a2a);
 
-        // 2. Massive Biomes
-        // Hub is at the center (3000, 3000)
-        windZone = scene.add.rectangle(3000, 1000, 2000, 2000, 0xffffff, 0.1); // North
-        iceZone = scene.add.rectangle(5000, 3000, 2000, 2000, 0x00aaff, 0.3); // East
-        waterZone = scene.add.rectangle(3000, 5000, 2000, 2000, 0x0044ff, 0.4); // South
+        // 2. Expanded Biomes
+        iceZone = scene.add.rectangle(3000, 1800, 1200, 1200, 0x00aaff, 0.3);
+        windZone = scene.add.rectangle(1800, 600, 1200, 800, 0xffffff, 0.1);
+        waterZone = scene.add.rectangle(1800, 3000, 1200, 800, 0x0044ff, 0.4);
         
         scene.physics.add.existing(iceZone, true);
         scene.physics.add.existing(windZone, true);
         scene.physics.add.existing(waterZone, true);
 
-        // 3. Funneling Walls (Leaving gaps to enter zones)
+        // 3. Walls for the Hub (Expanded)
         walls = scene.physics.add.staticGroup();
         function buildWall(x, y, w, h) { walls.add(scene.add.rectangle(x, y, w, h, 0x555555)); }
         
-        buildWall(2200, 2000, 1600, 40); // North Wall L
-        buildWall(3800, 2000, 1600, 40); // North Wall R
-        buildWall(4000, 2200, 40, 1600); // East Wall T
-        buildWall(4000, 3800, 40, 1600); // East Wall B
-        buildWall(2200, 4000, 1600, 40); // South Wall L
-        buildWall(3800, 4000, 1600, 40); // South Wall R
+        buildWall(1400, 1000, 800, 40); // North L
+        buildWall(2200, 1000, 800, 40); // North R
+        buildWall(2400, 1400, 40, 800); // East T
+        buildWall(2400, 2200, 40, 800); // East B
+        buildWall(1400, 2600, 800, 40); // South L
+        buildWall(2200, 2600, 800, 40); // South R
 
         // 4. Core Loop Objects
-        packageObj = scene.add.rectangle(2900, 3100, 40, 40, 0x00ff00); // Hub center
+        packageObj = scene.add.rectangle(1700, 1900, 40, 40, 0x00ff00);
         scene.physics.add.existing(packageObj, true);
 
-        dropZoneObj = scene.add.rectangle(3000, 500, 150, 150, 0xaa00ff, 0.5); // Deep in Wind Canyon
+        dropZoneObj = scene.add.rectangle(1800, 300, 120, 120, 0xaa00ff, 0.5);
         scene.physics.add.existing(dropZoneObj, true);
 
-        // 5. The NPC (Positioned near the North Canyon entrance)
-        npcObj = scene.add.rectangle(2850, 2200, 50, 50, 0xffff00);
+        // 5. NPC
+        npcObj = scene.add.rectangle(1700, 1100, 50, 50, 0xffff00);
         scene.physics.add.existing(npcObj, true);
-        scene.add.text(2800, 2150, "NPC (Press Space)", { fontSize: '16px', fill: '#fff' });
+        scene.add.text(1650, 1050, "NPC", { fontSize: '20px', fill: '#fff' });
 
-        // 6. The Player
-        player = scene.add.rectangle(3000, 3000, 50, 50, 0x00ffcc);
+        // 6. Player (Made slightly larger to fit the new scale)
+        player = scene.add.rectangle(1800, 1800, 50, 50, 0x00ffcc);
         scene.physics.add.existing(player);
         player.body.setCollideWorldBounds(true);
-        player.body.setMaxVelocity(400); // Slightly faster max speed for the larger map
+        player.body.setMaxVelocity(400); // Slightly faster top speed
         player.oldPosition = { x: player.x, y: player.y };
 
         scene.physics.add.collider(player, walls);
 
-        // 7. Inputs & Camera
-        scene.cameras.main.setBounds(0, 0, 6000, 6000);
+        // 7. Camera & Controls
+        scene.cameras.main.setBounds(0, 0, 3600, 3600);
         scene.cameras.main.startFollow(player, true, 0.1, 0.1);
-        // Zoom camera in slightly so the world feels bigger
-        scene.cameras.main.setZoom(1.2); 
+        scene.cameras.main.setZoom(0.65); // ZOOM OUT: See much more of the map!
         
         cursors = scene.input.keyboard.createCursorKeys();
         spacebar = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
-        // Multiplayer Sync (Unchanged)
+        // Multiplayer Listeners
         playersRef.on('value', (snapshot) => {
             const playersData = snapshot.val() || {};
             let onlineCount = 0;
@@ -163,7 +161,10 @@
                 const data = playersData[id];
                 if (id !== myId) {
                     if (!otherPlayers[id]) { otherPlayers[id] = scene.add.rectangle(data.x, data.y, 50, 50, 0xff4444); } 
-                    else { otherPlayers[id].setPosition(data.x, data.y); }
+                    else { 
+                        otherPlayers[id].setPosition(data.x, data.y); 
+                        otherPlayers[id].setAngle(data.angle || 0);
+                    }
                 }
             });
             document.getElementById('player-count').innerText = `Couriers Online: ${onlineCount}`;
@@ -173,132 +174,93 @@
         });
     }
 
-    // NEW: The Hazard Spin-Out Function
-    function triggerHazardFailure(scene, hazardName, safeX, safeY) {
-        if (isSpinningOut) return;
-        isSpinningOut = true;
-
-        // Flash warning
-        document.getElementById('mission-status').innerText = `HAZARD: Missing equipment for ${hazardName}!`;
-        document.getElementById('mission-status').style.color = "#ff4444";
-
-        // Stop moving and start spinning
-        player.body.setAcceleration(0, 0);
-        player.body.setVelocity(0, 0);
-        player.body.setAngularVelocity(1000); 
-
-        // Bounce back to safe coordinates
-        scene.tweens.add({
-            targets: player,
-            x: safeX,
-            y: safeY,
-            duration: 800,
-            ease: 'Power2',
-            onComplete: () => {
-                player.body.setAngularVelocity(0);
-                player.angle = 0;
-                isSpinningOut = false;
-                
-                // Reset mission text
-                if (hasPackage) {
-                    document.getElementById('mission-status').innerText = "Mission: Deliver to the Purple Zone!";
-                    document.getElementById('mission-status').style.color = "#00ffcc";
-                } else {
-                    document.getElementById('mission-status').innerText = "Mission: Pick up the Package";
-                    document.getElementById('mission-status').style.color = "#ff4444";
-                }
-            }
-        });
-    }
-
     function update() {
         if (!player) return;
 
-        // --- HAZARD CHECKS (Hard Physics) ---
         const onIce = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), iceZone.getBounds());
         const inWind = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), windZone.getBounds());
         const inWater = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), waterZone.getBounds());
         
-        // If they fail a hazard, trigger the spin-out and skip player inputs
-        if (onIce && currentEquip !== 'cleats') {
-            triggerHazardFailure(this, 'ICE', 3800, 3000); // Bounce to center-right hub
-            return; 
-        }
+        const warningText = document.getElementById('warning-text');
+        warningText.innerText = "";
+        
+        // --- TRUE FAILURE STATES ---
+        let controlLock = false; // If true, player can't use keys
+
         if (inWind && currentEquip !== 'shell') {
-            triggerHazardFailure(this, 'AIR RESISTANCE', 3000, 2200); // Bounce to top hub
-            return;
+            controlLock = true;
+            warningText.innerText = "WARNING: Engine overwhelmed by Air Resistance! Equip Shell!";
+            player.angle += 15; // Spin out visually
+            player.body.setAcceleration(0, 0); // Kill engine power
+            player.body.velocity.x += 30; // Massive wind pushes you East forcefully
         }
+
+        if (onIce && currentEquip !== 'cleats') {
+            controlLock = true;
+            warningText.innerText = "WARNING: Zero Friction! Tires spinning out! Equip Cleats!";
+            player.angle += 20; // Fast spin
+            player.body.setDrag(5); // You slide endlessly
+        } else if (!inWind) {
+            player.angle = 0; // Straighten out when safe
+            player.body.setDrag(1500); // Normal friction
+        }
+
         if (inWater && currentEquip !== 'hull') {
-            triggerHazardFailure(this, 'WATER RESISTANCE', 3000, 3800); // Bounce to bottom hub
-            return;
+            controlLock = true;
+            warningText.innerText = "WARNING: Water Resistance too high! Sinking! Equip Hull!";
+            player.angle += 5; 
+            player.body.setAcceleration(0, 0);
+            player.body.velocity.y += 20; // Current washes you South
         }
 
-        // If currently spinning out, ignore arrow keys
-        if (isSpinningOut) return;
+        // --- MOVEMENT LOGIC (Only works if not control-locked) ---
+        if (!controlLock) {
+            if (cursors.left.isDown) player.body.setAccelerationX(-1500);
+            else if (cursors.right.isDown) player.body.setAccelerationX(1500);
+            else player.body.setAccelerationX(0);
 
-        // --- NORMAL MOVEMENT LOGIC ---
-        player.body.setDrag(1500); // Standard friction
+            if (cursors.up.isDown) player.body.setAccelerationY(-1500);
+            else if (cursors.down.isDown) player.body.setAccelerationY(1500);
+            else player.body.setAccelerationY(0);
+        }
 
-        if (cursors.left.isDown) player.body.setAccelerationX(-2000);
-        else if (cursors.right.isDown) player.body.setAccelerationX(2000);
-        else player.body.setAccelerationX(0);
-
-        if (cursors.up.isDown) player.body.setAccelerationY(-2000);
-        else if (cursors.down.isDown) player.body.setAccelerationY(2000);
-        else player.body.setAccelerationY(0);
-
-        // --- CORE LOOP: PACKAGES & DELIVERIES ---
-        const touchingPackage = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), packageObj.getBounds());
-        const touchingDropZone = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), dropZoneObj.getBounds());
-
-        if (touchingPackage && !hasPackage) {
-            hasPackage = true;
-            packageObj.setVisible(false);
+        // --- CORE LOOP ---
+        if (Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), packageObj.getBounds()) && !hasPackage) {
+            hasPackage = true; packageObj.setVisible(false);
             document.getElementById('mission-status').innerText = "Mission: Deliver to the Purple Zone!";
             document.getElementById('mission-status').style.color = "#00ffcc";
         }
-
-        if (touchingDropZone && hasPackage) {
-            hasPackage = false;
-            score++;
-            document.getElementById('score').innerText = score;
+        if (Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), dropZoneObj.getBounds()) && hasPackage) {
+            hasPackage = false; score++; document.getElementById('score').innerText = score;
             document.getElementById('mission-status').innerText = "Mission: Return to Hub for next package";
             document.getElementById('mission-status').style.color = "#ff4444";
             setTimeout(() => { packageObj.setVisible(true); }, 2000);
         }
 
-        // --- NPC DIALOGUE SYSTEM ---
-        const distanceToNPC = Phaser.Math.Distance.Between(player.x, player.y, npcObj.x, npcObj.y);
-        const dialogueBox = document.getElementById('dialogue-box');
-        if (distanceToNPC < 150) {
-            dialogueBox.style.display = 'block';
+        // --- NPC ---
+        if (Phaser.Math.Distance.Between(player.x, player.y, npcObj.x, npcObj.y) < 150) {
+            document.getElementById('dialogue-box').style.display = 'block';
             document.getElementById('dialogue-text').innerText = npcLines[dialogueStep];
             if (Phaser.Input.Keyboard.JustDown(spacebar)) {
-                dialogueStep++;
-                if (dialogueStep >= npcLines.length) { dialogueStep = 0; }
+                dialogueStep++; if (dialogueStep >= npcLines.length) dialogueStep = 0;
             }
         } else {
-            dialogueBox.style.display = 'none';
-            dialogueStep = 0;
+            document.getElementById('dialogue-box').style.display = 'none'; dialogueStep = 0;
         }
 
-        // --- MULTIPLAYER SYNC ---
+        // --- MULTIPLAYER ---
         const xChanged = Math.abs(player.x - player.oldPosition.x) > 1;
         const yChanged = Math.abs(player.y - player.oldPosition.y) > 1;
-        if (xChanged || yChanged) {
-            playersRef.child(myId).set({ x: player.x, y: player.y });
+        if (xChanged || yChanged || controlLock) { // Send data if moving OR spinning
+            playersRef.child(myId).set({ x: player.x, y: player.y, angle: player.angle });
             player.oldPosition = { x: player.x, y: player.y };
         }
     }
 
     const config = {
         type: Phaser.AUTO,
-        scale: {
-            mode: Phaser.Scale.RESIZE, // Automatically fits to browser window
-            parent: 'game-container',
-            width: '100%',
-            height: '100%'
-        },
+        scale: { mode: Phaser.Scale.RESIZE, width: '100%', height: '100%' }, // Dynamic screen filling
+        parent: 'game-container',
         physics: { default: 'arcade', arcade: { gravity: { y: 0 }, debug: false } },
         scene: { preload: preload, create: create, update: update }
     };
