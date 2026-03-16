@@ -13,8 +13,17 @@
     <style>
         body { margin: 0; padding: 0; background: #1a1a1a; display: flex; justify-content: center; align-items: center; height: 100vh; color: white; font-family: sans-serif; }
         #game-container { border: 4px solid #fff; box-shadow: 0 0 20px #00ffcc; border-radius: 8px; overflow: hidden; }
-        #ui { position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; border: 2px solid #00ffcc; pointer-events: none; z-index: 100; }
+        #ui { position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; border: 2px solid #00ffcc; pointer-events: auto; z-index: 100; }
         .biome-text { font-size: 0.8rem; color: #888; margin-top: 5px; }
+        
+        /* NEW: Inventory Button Styles */
+        .equip-btn { 
+            display: block; width: 100%; margin-top: 15px; padding: 8px; 
+            background: #222; color: #fff; border: 1px solid #777; 
+            border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.2s;
+        }
+        .equip-btn:hover { background: #444; }
+        .equip-btn.active { background: #ffaa00; color: #000; border-color: #ffaa00; box-shadow: 0 0 10px #ffaa00; }
     </style>
 </head>
 <body>
@@ -25,6 +34,8 @@
         <p id="player-count">Couriers Online: 1</p>
         <div class="biome-text">East: Ice Lake (Friction)</div>
         <div class="biome-text">North: Wind Canyon (Air Resistance)</div>
+        
+        <button id="btn-shell" class="equip-btn">Equip Streamlined Shell</button>
     </div>
 
     <div id="game-container"></div>
@@ -63,52 +74,67 @@
     let windZone;
     let walls;
     let otherPlayers = {}; 
+    
+    // NEW: Equipment State Variable
+    let hasStreamlinedShell = false;
 
     function preload() { }
 
     function create() {
         const scene = this;
 
-        // 1. Build the World Background
+        // Build Background
         scene.physics.world.setBounds(0, 0, 1800, 1200);
         scene.add.grid(900, 600, 1800, 1200, 50, 50, 0x222222).setAltFillStyle(0x2a2a2a);
 
-        // 2. Build the Biomes
+        // Build Biomes
         iceZone = scene.add.rectangle(1500, 600, 600, 600, 0x00aaff, 0.3);
         scene.physics.add.existing(iceZone, true);
 
         windZone = scene.add.rectangle(900, 200, 600, 400, 0xffffff, 0.1);
         scene.physics.add.existing(windZone, true);
 
-        // 3. Build the Solid Walls
+        // Build Solid Walls
         walls = scene.physics.add.staticGroup();
-        function buildWall(x, y, width, height) {
-            const rect = scene.add.rectangle(x, y, width, height, 0x555555);
-            walls.add(rect);
-        }
-        // North Walls (To Wind Canyon)
+        function buildWall(x, y, width, height) { walls.add(scene.add.rectangle(x, y, width, height, 0x555555)); }
         buildWall(700, 400, 400, 20); 
         buildWall(1100, 400, 400, 20);
-        // East Walls (To Ice Lake)
         buildWall(1200, 450, 20, 300);
         buildWall(1200, 750, 20, 300);
 
-        // 4. Create the Player
+        // Create Player
         player = scene.add.rectangle(900, 600, 30, 30, 0x00ffcc);
         scene.physics.add.existing(player);
         player.body.setCollideWorldBounds(true);
         player.body.setMaxVelocity(300);
-        player.oldPosition = { x: player.x, y: player.y };
+        player.oldPosition = { x: player.x, y: player.y, color: 0x00ffcc };
 
-        // Turn on Wall Collisions
         scene.physics.add.collider(player, walls);
 
-        // 5. Camera & Controls
+        // Camera & Controls
         scene.cameras.main.setBounds(0, 0, 1800, 1200);
         scene.cameras.main.startFollow(player, true, 0.1, 0.1);
         cursors = scene.input.keyboard.createCursorKeys();
 
-        // 6. Multiplayer Listeners
+        // --- NEW: UI Button Listener ---
+        document.getElementById('btn-shell').addEventListener('click', (e) => {
+            hasStreamlinedShell = !hasStreamlinedShell; // Toggle true/false
+            e.target.classList.toggle('active');
+            
+            // Visual feedback: Turn player orange when equipped, green when not
+            if (hasStreamlinedShell) {
+                player.setFillStyle(0xffaa00);
+                player.colorState = 0xffaa00; // Track color for multiplayer
+            } else {
+                player.setFillStyle(0x00ffcc);
+                player.colorState = 0x00ffcc;
+            }
+            
+            // Remove focus so arrow keys keep driving the car instead of pressing the button
+            e.target.blur(); 
+        });
+
+        // Multiplayer Listeners
         playersRef.on('value', (snapshot) => {
             const playersData = snapshot.val() || {};
             let onlineCount = 0;
@@ -118,9 +144,12 @@
                 const data = playersData[id];
                 if (id !== myId) {
                     if (!otherPlayers[id]) {
-                        otherPlayers[id] = scene.add.rectangle(data.x, data.y, 30, 30, 0xff4444);
+                        // Spawn new player with their current color
+                        otherPlayers[id] = scene.add.rectangle(data.x, data.y, 30, 30, data.color || 0xff4444);
                     } else {
+                        // Update position and color
                         otherPlayers[id].setPosition(data.x, data.y);
+                        if (data.color) otherPlayers[id].setFillStyle(data.color);
                     }
                 }
             });
@@ -139,52 +168,48 @@
     function update() {
         if (!player) return;
 
-        // 1. SCIENCE MECHANICS: Check Environment
+        // 1. ENVIRONMENT CHECK
         const onIce = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), iceZone.getBounds());
         const inWind = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), windZone.getBounds());
 
-        // A. Apply Friction (Drag)
+        // A. Friction
         player.body.setDrag(onIce ? 50 : 1500);
 
-        // B. Apply Air Resistance (Wind Force pushing South)
-        const windForce = inWind ? 1200 : 0;
+        // B. Air Resistance (NEW LOGIC)
+        // If they have the shell, wind force drops from a massive 1200 to a gentle 200.
+        const windForce = inWind ? (hasStreamlinedShell ? 200 : 1200) : 0;
 
-        // 2. MOVEMENT LOGIC (Combining Engine Force + Wind Force)
+        // 2. MOVEMENT LOGIC
         if (cursors.left.isDown) player.body.setAccelerationX(-1500);
         else if (cursors.right.isDown) player.body.setAccelerationX(1500);
         else player.body.setAccelerationX(0);
 
         if (cursors.up.isDown) player.body.setAccelerationY(-1500 + windForce);
         else if (cursors.down.isDown) player.body.setAccelerationY(1500 + windForce);
-        else player.body.setAccelerationY(0 + windForce); // Wind pushes even when keys are released!
+        else player.body.setAccelerationY(0 + windForce);
 
         // 3. MULTIPLAYER BROADCASTER
         const xChanged = Math.abs(player.x - player.oldPosition.x) > 1;
         const yChanged = Math.abs(player.y - player.oldPosition.y) > 1;
+        const colorChanged = player.colorState !== player.oldPosition.color;
 
-        if (xChanged || yChanged) {
-            playersRef.child(myId).set({ x: player.x, y: player.y });
-            player.oldPosition = { x: player.x, y: player.y };
+        if (xChanged || yChanged || colorChanged) {
+            playersRef.child(myId).set({ 
+                x: player.x, 
+                y: player.y,
+                color: player.colorState || 0x00ffcc 
+            });
+            player.oldPosition = { x: player.x, y: player.y, color: player.colorState };
         }
     }
 
-    // ==========================================
-    // 3. PHASER BOOTSTRAP
-    // ==========================================
     const config = {
         type: Phaser.AUTO,
-        width: 800,
-        height: 600,
-        parent: 'game-container',
-        physics: {
-            default: 'arcade',
-            arcade: { gravity: { y: 0 }, debug: false } 
-        },
+        width: 800, height: 600, parent: 'game-container',
+        physics: { default: 'arcade', arcade: { gravity: { y: 0 }, debug: false } },
         scene: { preload: preload, create: create, update: update }
     };
-
     const game = new Phaser.Game(config);
-
 </script>
 </body>
 </html>
