@@ -6,7 +6,6 @@
     <title>Aero-Terra Couriers</title>
     
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
-    
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 
@@ -14,6 +13,7 @@
         body { margin: 0; padding: 0; background: #1a1a1a; display: flex; justify-content: center; align-items: center; height: 100vh; color: white; font-family: sans-serif; }
         #game-container { border: 4px solid #fff; box-shadow: 0 0 20px #00ffcc; border-radius: 8px; overflow: hidden; }
         #ui { position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; border: 2px solid #00ffcc; pointer-events: none; z-index: 100; }
+        .biome-text { font-size: 0.8rem; color: #888; margin-top: 5px; }
     </style>
 </head>
 <body>
@@ -22,13 +22,15 @@
         <h3 style="margin: 0; color: #00ffcc;">Aero-Terra Couriers</h3>
         <p>Use <b>Arrow Keys</b> to drive.</p>
         <p id="player-count">Couriers Online: 1</p>
+        <div class="biome-text">East: Ice Lake (Friction)</div>
+        <div class="biome-text">North: Wind Canyon (Air Resistance)</div>
     </div>
 
     <div id="game-container"></div>
 
 <script>
     // ==========================================
-    // 1. FIREBASE SETUP & PLAYER IDENTITY
+    // 1. FIREBASE SETUP
     // ==========================================
     const firebaseConfig = {
         apiKey: "AIzaSyBpf5wi0wShnatqUhcmPhSOdnd0NdBL65A",
@@ -42,64 +44,78 @@
     if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
     const db = firebase.database();
 
-    // Create a unique ID for this player's session
     let myId = sessionStorage.getItem('aeroId');
     if (!myId) {
         myId = 'Courier_' + Math.random().toString(36).substr(2, 6);
         sessionStorage.setItem('aeroId', myId);
     }
-
-    // Database Reference for all players
     const playersRef = db.ref('aero_terra/players');
-
-    // Automatically remove my data from Firebase if I close the tab
     playersRef.child(myId).onDisconnect().remove();
 
     // ==========================================
     // 2. PHASER GAME LOGIC
     // ==========================================
     
-    let player;         // My local green square
+    let player;
     let cursors;
     let iceZone;
-    let otherPlayers = {}; // A dictionary to store the red squares of other players
+    let windZone;
+    let walls;
+    let otherPlayers = {}; 
 
     function preload() { }
 
     function create() {
-        const scene = this; // Store reference to the scene for Firebase callbacks
+        const scene = this;
 
         // 1. Build the World
         scene.physics.world.setBounds(0, 0, 1800, 1200);
-        scene.add.grid(900, 600, 1800, 1200, 50, 50, 0x333333).setAltFillStyle(0x444444);
+        scene.add.grid(900, 600, 1800, 1200, 50, 50, 0x222222).setAltFillStyle(0x2a2a2a);
 
-        // 2. Add Ice Zone
-        iceZone = scene.add.rectangle(1200, 300, 400, 400, 0x00aaff, 0.5);
+        // --- NEW: LAYER 3 ENVIRONMENT ---
+        
+        // A. The Ice Lake (East)
+        iceZone = scene.add.rectangle(1500, 600, 600, 600, 0x00aaff, 0.3);
         scene.physics.add.existing(iceZone, true);
 
-        // 3. Create MY Player (Green)
-        // Spawn randomly near the center so players don't spawn exactly on top of each other
-        const startX = 850 + Math.random() * 100;
-        const startY = 550 + Math.random() * 100;
+        // B. The Wind Canyon (North)
+        windZone = scene.add.rectangle(900, 200, 600, 400, 0xffffff, 0.1);
+        scene.physics.add.existing(windZone, true);
+
+        // C. The Walls (Solid boundaries)
+        walls = scene.physics.add.staticGroup();
         
-        player = scene.add.rectangle(startX, startY, 30, 30, 0x00ffcc);
+        function buildWall(x, y, width, height) {
+            const rect = scene.add.rectangle(x, y, width, height, 0x555555);
+            walls.add(rect);
+        }
+
+        // Walls separating Hub from Wind Canyon (Leaves a gap in the middle)
+        buildWall(700, 400, 400, 20); 
+        buildWall(1100, 400, 400, 20);
+
+        // Walls separating Hub from Ice Lake (Leaves a gap in the middle)
+        buildWall(1200, 450, 20, 300);
+        buildWall(1200, 750, 20, 300);
+
+        // --------------------------------
+
+        // 3. Create MY Player (Starts in the Hub at 900, 600)
+        player = scene.add.rectangle(900, 600, 30, 30, 0x00ffcc);
         scene.physics.add.existing(player);
         player.body.setCollideWorldBounds(true);
         player.body.setMaxVelocity(300);
-
-        // Save old position to prevent spamming the database when standing still
         player.oldPosition = { x: player.x, y: player.y };
+
+        // --- NEW: Wall Collisions ---
+        scene.physics.add.collider(player, walls);
 
         // 4. Camera & Controls
         scene.cameras.main.setBounds(0, 0, 1800, 1200);
         scene.cameras.main.startFollow(player, true, 0.1, 0.1);
         cursors = scene.input.keyboard.createCursorKeys();
 
-        // ---------------------------------------------------------
-        // MULTIPLAYER LISTENERS (Receiving data from Firebase)
-        // ---------------------------------------------------------
-
-        // When ANY player joins or moves (including ourselves)
+        // 5. Multiplayer Listeners
         playersRef.on('value', (snapshot) => {
             const playersData = snapshot.val() || {};
             let onlineCount = 0;
@@ -107,27 +123,21 @@
             Object.keys(playersData).forEach((id) => {
                 onlineCount++;
                 const data = playersData[id];
-
-                // If this is NOT me, we need to draw/update a red square
                 if (id !== myId) {
                     if (!otherPlayers[id]) {
-                        // NEW PLAYER JOINED: Create a red square for them
                         otherPlayers[id] = scene.add.rectangle(data.x, data.y, 30, 30, 0xff4444);
                     } else {
-                        // EXISTING PLAYER MOVED: Update their position
                         otherPlayers[id].setPosition(data.x, data.y);
                     }
                 }
             });
 
-            // Update the UI text
             document.getElementById('player-count').innerText = `Couriers Online: ${onlineCount}`;
 
-            // Remove players who disconnected (their ID is in our dictionary, but no longer in Firebase)
             Object.keys(otherPlayers).forEach((id) => {
                 if (!playersData[id]) {
-                    otherPlayers[id].destroy(); // Remove sprite from screen
-                    delete otherPlayers[id];    // Remove from dictionary
+                    otherPlayers[id].destroy(); 
+                    delete otherPlayers[id];    
                 }
             });
         });
@@ -136,7 +146,7 @@
     function update() {
         if (!player) return;
 
-        // 1. MOVEMENT LOGIC
+        // 1. Base Movement
         if (cursors.left.isDown) player.body.setAccelerationX(-1500);
         else if (cursors.right.isDown) player.body.setAccelerationX(1500);
         else player.body.setAccelerationX(0);
@@ -145,31 +155,31 @@
         else if (cursors.down.isDown) player.body.setAccelerationY(1500);
         else player.body.setAccelerationY(0);
 
-        // 2. SCIENCE MECHANICS: Friction
+        // --- NEW: SCIENCE MECHANICS (Physics Interactions) ---
+
+        // A. Friction (Ice Zone)
         const onIce = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), iceZone.getBounds());
         player.body.setDrag(onIce ? 50 : 1500);
 
-        // ---------------------------------------------------------
-        // MULTIPLAYER BROADCASTER (Sending data to Firebase)
-        // ---------------------------------------------------------
-        
-        // Only send data to Firebase if we actually moved! (Saves bandwidth)
+        // B. Air Resistance (Wind Canyon)
+        const inWind = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), windZone.getBounds());
+        if (inWind) {
+            // The wind is howling South! Push the player backward.
+            player.body.velocity.y += 18; 
+        }
+
+        // -----------------------------------------------------
+
+        // 3. Multiplayer Broadcaster
         const xChanged = Math.abs(player.x - player.oldPosition.x) > 1;
         const yChanged = Math.abs(player.y - player.oldPosition.y) > 1;
 
         if (xChanged || yChanged) {
-            playersRef.child(myId).set({
-                x: player.x,
-                y: player.y
-            });
-            // Update old position so we don't spam the database next frame
+            playersRef.child(myId).set({ x: player.x, y: player.y });
             player.oldPosition = { x: player.x, y: player.y };
         }
     }
 
-    // ==========================================
-    // 3. PHASER BOOTSTRAP
-    // ==========================================
     const config = {
         type: Phaser.AUTO,
         width: 800,
@@ -177,7 +187,7 @@
         parent: 'game-container',
         physics: {
             default: 'arcade',
-            arcade: { gravity: { y: 0 }, debug: false }
+            arcade: { gravity: { y: 0 }, debug: false } // Change debug to true to see hitboxes!
         },
         scene: { preload: preload, create: create, update: update }
     };
