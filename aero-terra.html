@@ -12,7 +12,6 @@
     <style>
         body { margin: 0; padding: 0; background: #000; overflow: hidden; color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         
-        /* --- LOBBY UI --- */
         #lobby { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: radial-gradient(circle at center, #161b22 0%, #0d1117 100%); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 500; }
         .terminal { background: #161b22; border: 2px solid #30363d; padding: 40px; border-radius: 12px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
         .terminal h1 { color: #00ffcc; text-transform: uppercase; letter-spacing: 2px; margin-top: 0; }
@@ -21,11 +20,9 @@
         .btn-launch { background: #00ffcc; color: #000; font-weight: bold; border: none; padding: 12px 25px; font-size: 1.1rem; border-radius: 4px; cursor: pointer; transition: all 0.2s; }
         .btn-launch:hover { background: #fff; box-shadow: 0 0 15px #00ffcc; }
         
-        /* Bobbing Animation for Lobby */
         .bobbing-vehicle { width: 50px; height: 50px; background: #00ffcc; margin: 0 auto 20px auto; border-radius: 8px; animation: bob 2s infinite ease-in-out; box-shadow: 0 10px 15px rgba(0,255,204,0.2); }
         @keyframes bob { 0% { transform: translateY(0); } 50% { transform: translateY(-15px); } 100% { transform: translateY(0); } }
 
-        /* --- GAME UI --- */
         #game-wrapper { display: none; width: 100vw; height: 100vh; position: relative; }
         #game-container { width: 100%; height: 100%; }
         
@@ -77,9 +74,6 @@
     </div>
 
 <script>
-    // ==========================================
-    // 1. FIREBASE SETUP
-    // ==========================================
     const firebaseConfig = {
         apiKey: "AIzaSyBpf5wi0wShnatqUhcmPhSOdnd0NdBL65A",
         authDomain: "symmetry-and-nets.firebaseapp.com",
@@ -99,9 +93,6 @@
     let hasPackage = false;
     let score = 0;
 
-    // ==========================================
-    // 2. LOBBY & AUTH LOGIC
-    // ==========================================
     function loginAndLaunch() {
         const nameInput = document.getElementById('courier-name').value.trim();
         if (!nameInput) { alert("Please enter a Courier Name!"); return; }
@@ -124,15 +115,12 @@
     }
 
     const npcLines = [
-        "The wind in the canyon is howling east! It's too strong for standard engines.",
+        "The wind in the canyon is howling! It's too strong for standard engines.",
         "Air resistance pushes against moving objects. The wider the object, the harder the push.",
         "Equip the Streamlined Shell in your garage so the air flows around you, allowing your engine to push through!"
     ];
     let dialogueStep = 0;
 
-    // ==========================================
-    // 3. PHASER ENGINE
-    // ==========================================
     function bootPhaserEngine() {
         let player, cursors, spacebar;
         let iceZone, windZone, waterZone;
@@ -140,16 +128,20 @@
         let walls;
         let otherPlayers = {}; 
 
-        function preload() { }
+        function preload() { 
+            // PHASE 2: LOADING IMAGES INSTEAD OF SHAPES
+            this.load.image('vehicle', 'https://labs.phaser.io/assets/sprites/car90.png');
+            this.load.image('npc', 'https://labs.phaser.io/assets/sprites/spaceman.png');
+            this.load.image('crate', 'https://labs.phaser.io/assets/sprites/box-item-boxed.png');
+            this.load.image('dropzone', 'https://labs.phaser.io/assets/sprites/target.png');
+        }
 
         function create() {
             const scene = this;
 
-            // 1. Build the Expanded World (3600 x 3600)
             scene.physics.world.setBounds(0, 0, 3600, 3600);
             scene.add.grid(1800, 1800, 3600, 3600, 100, 100, 0x222222).setAltFillStyle(0x2a2a2a);
 
-            // 2. Expanded Biomes
             iceZone = scene.add.rectangle(3000, 1800, 1200, 1200, 0x00aaff, 0.3);
             windZone = scene.add.rectangle(1800, 600, 1200, 800, 0xffffff, 0.1);
             waterZone = scene.add.rectangle(1800, 3000, 1200, 800, 0x0044ff, 0.4);
@@ -162,47 +154,31 @@
             scene.add.text(3000, 1800, "ICE LAKE\n(Low Friction)", { fontSize: '32px', fill: '#fff', align: 'center' }).setOrigin(0.5);
             scene.add.text(1800, 3300, "RAGING RIVER\n(Water Resistance)", { fontSize: '32px', fill: '#fff', align: 'center' }).setOrigin(0.5);
 
-            // 3. Walls for the Hub (FIXED MATH - 200px Gates!)
             walls = scene.physics.add.staticGroup();
             function buildWall(x, y, w, h) { walls.add(scene.add.rectangle(x, y, w, h, 0x555555)); }
             
-            // North Walls (Gap in middle for Canyon)
-            buildWall(1350, 1000, 700, 40); // North L
-            buildWall(2250, 1000, 700, 40); // North R
+            buildWall(1350, 1000, 700, 40); 
+            buildWall(2250, 1000, 700, 40); 
+            buildWall(1350, 2600, 700, 40); 
+            buildWall(2250, 2600, 700, 40); 
+            buildWall(2600, 1350, 40, 700); 
+            buildWall(2600, 2250, 40, 700); 
+            buildWall(1000, 1800, 40, 1600); 
 
-            // South Walls (Gap in middle for River)
-            buildWall(1350, 2600, 700, 40); // South L
-            buildWall(2250, 2600, 700, 40); // South R
+            // SPONSOR THE OBJECTS WITH IMAGES
+            packageObj = scene.physics.add.sprite(1700, 1900, 'crate').setScale(1.5);
+            dropZoneObj = scene.physics.add.sprite(1800, 500, 'dropzone').setScale(1.5);
+            
+            npcObj = scene.physics.add.sprite(1700, 1100, 'npc');
+            scene.add.text(1700, 1050, "Alby (Mechanic)", { fontSize: '20px', fill: '#fff' }).setOrigin(0.5);
 
-            // East Walls (Gap in middle for Ice)
-            buildWall(2600, 1350, 40, 700); // East Top
-            buildWall(2600, 2250, 40, 700); // East Bottom
-
-            // West Wall (Solid, no map there yet)
-            buildWall(1000, 1800, 40, 1600); // West Solid Wall
-
-            // 4. Core Loop Objects
-            packageObj = scene.add.rectangle(1700, 1900, 40, 40, 0x00ff00);
-            scene.physics.add.existing(packageObj, true);
-
-            dropZoneObj = scene.add.rectangle(1800, 500, 120, 120, 0xaa00ff, 0.5);
-            scene.physics.add.existing(dropZoneObj, true);
-
-            // 5. NPC
-            npcObj = scene.add.rectangle(1700, 1100, 50, 50, 0xffff00);
-            scene.physics.add.existing(npcObj, true);
-            scene.add.text(1650, 1050, "NPC", { fontSize: '20px', fill: '#fff' });
-
-            // 6. Player
-            player = scene.add.rectangle(1800, 1800, 50, 50, 0x00ffcc);
-            scene.physics.add.existing(player);
+            player = scene.physics.add.sprite(1800, 1800, 'vehicle');
             player.body.setCollideWorldBounds(true);
             player.body.setMaxVelocity(400); 
             player.oldPosition = { x: player.x, y: player.y };
 
             scene.physics.add.collider(player, walls);
 
-            // 7. Camera & Controls
             scene.cameras.main.setBounds(0, 0, 3600, 3600);
             scene.cameras.main.startFollow(player, true, 0.1, 0.1);
             scene.cameras.main.setZoom(0.65); 
@@ -210,7 +186,6 @@
             cursors = scene.input.keyboard.createCursorKeys();
             spacebar = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
-            // 8. Multiplayer Listeners
             playersRef.on('value', (snapshot) => {
                 const playersData = snapshot.val() || {};
                 let onlineCount = 0;
@@ -219,7 +194,8 @@
                     const data = playersData[id];
                     if (id !== myId) {
                         if (!otherPlayers[id]) { 
-                            otherPlayers[id] = scene.add.rectangle(data.x, data.y, 50, 50, 0xff4444); 
+                            // Load other players with the vehicle image too, tinted red so you can tell them apart
+                            otherPlayers[id] = scene.add.sprite(data.x, data.y, 'vehicle').setTint(0xff4444); 
                             otherPlayers[id].nameTag = scene.add.text(data.x, data.y - 40, data.name, { fontSize: '16px', fill: '#fff' }).setOrigin(0.5);
                         } else { 
                             otherPlayers[id].setPosition(data.x, data.y); 
@@ -249,7 +225,6 @@
             const warningText = document.getElementById('warning-text');
             warningText.innerText = "";
             
-            // --- TRUE FAILURE STATES ---
             let controlLock = false;
 
             if (inWind && currentEquip !== 'shell') {
@@ -257,7 +232,8 @@
                 warningText.innerText = "WARNING: Engine overwhelmed by Air Resistance! Equip Shell!";
                 player.angle += 15; 
                 player.body.setAcceleration(0, 0); 
-                player.body.velocity.x += 30; 
+                // WIND FIX: Now blows you Negative X (West) back towards the Hub
+                player.body.velocity.x -= 30; 
             }
 
             if (onIce && currentEquip !== 'cleats') {
@@ -266,7 +242,7 @@
                 player.angle += 20; 
                 player.body.setDrag(5); 
             } else if (!inWind) {
-                player.angle = 0; 
+                // Remove angle lock so car can face the direction it drives!
                 player.body.setDrag(1500); 
             }
 
@@ -278,31 +254,29 @@
                 player.body.velocity.y += 20; 
             }
 
-            // --- MOVEMENT LOGIC ---
+            // --- VISUAL ROTATION & MOVEMENT LOGIC ---
             if (!controlLock) {
-                if (cursors.left.isDown) player.body.setAccelerationX(-1500);
-                else if (cursors.right.isDown) player.body.setAccelerationX(1500);
+                if (cursors.left.isDown) { player.body.setAccelerationX(-1500); player.angle = 180; }
+                else if (cursors.right.isDown) { player.body.setAccelerationX(1500); player.angle = 0; }
                 else player.body.setAccelerationX(0);
 
-                if (cursors.up.isDown) player.body.setAccelerationY(-1500);
-                else if (cursors.down.isDown) player.body.setAccelerationY(1500);
+                if (cursors.up.isDown) { player.body.setAccelerationY(-1500); player.angle = -90; }
+                else if (cursors.down.isDown) { player.body.setAccelerationY(1500); player.angle = 90; }
                 else player.body.setAccelerationY(0);
             }
 
-            // --- CORE LOOP ---
             if (Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), packageObj.getBounds()) && !hasPackage) {
                 hasPackage = true; packageObj.setVisible(false);
-                document.getElementById('mission-status').innerText = "Mission: Deliver to the Purple Zone in Wind Canyon!";
+                document.getElementById('mission-status').innerText = "Mission: Deliver to the Target in Wind Canyon!";
                 document.getElementById('mission-status').style.color = "#00ffcc";
             }
             if (Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), dropZoneObj.getBounds()) && hasPackage) {
                 hasPackage = false; score++; document.getElementById('score').innerText = score;
-                document.getElementById('mission-status').innerText = "Mission: Return to Hub for next package";
+                document.getElementById('mission-status').innerText = "Mission: Return to Hub for next crate";
                 document.getElementById('mission-status').style.color = "#ff4444";
                 setTimeout(() => { packageObj.setVisible(true); }, 2000);
             }
 
-            // --- NPC ---
             if (Phaser.Math.Distance.Between(player.x, player.y, npcObj.x, npcObj.y) < 150) {
                 document.getElementById('dialogue-box').style.display = 'block';
                 document.getElementById('dialogue-text').innerText = npcLines[dialogueStep];
@@ -313,7 +287,6 @@
                 document.getElementById('dialogue-box').style.display = 'none'; dialogueStep = 0;
             }
 
-            // --- MULTIPLAYER ---
             const xChanged = Math.abs(player.x - player.oldPosition.x) > 1;
             const yChanged = Math.abs(player.y - player.oldPosition.y) > 1;
             if (xChanged || yChanged || controlLock) { 
