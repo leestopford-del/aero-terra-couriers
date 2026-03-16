@@ -13,7 +13,7 @@
     <style>
         body { margin: 0; padding: 0; background: #1a1a1a; display: flex; justify-content: center; align-items: center; height: 100vh; color: white; font-family: sans-serif; }
         #game-container { border: 4px solid #fff; box-shadow: 0 0 20px #00ffcc; border-radius: 8px; overflow: hidden; }
-        #ui { position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; border: 2px solid #00ffcc; pointer-events: none; }
+        #ui { position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; border: 2px solid #00ffcc; pointer-events: none; z-index: 100; }
     </style>
 </head>
 <body>
@@ -21,14 +21,14 @@
     <div id="ui">
         <h3 style="margin: 0; color: #00ffcc;">Aero-Terra Couriers</h3>
         <p>Use <b>Arrow Keys</b> to drive.</p>
-        <p>Notice how you <b>slide</b> on the blue ice!</p>
+        <p id="player-count">Couriers Online: 1</p>
     </div>
 
     <div id="game-container"></div>
 
 <script>
     // ==========================================
-    // 1. FIREBASE SETUP
+    // 1. FIREBASE SETUP & PLAYER IDENTITY
     // ==========================================
     const firebaseConfig = {
         apiKey: "AIzaSyBpf5wi0wShnatqUhcmPhSOdnd0NdBL65A",
@@ -42,103 +42,144 @@
     if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
     const db = firebase.database();
 
+    // Create a unique ID for this player's session
+    let myId = sessionStorage.getItem('aeroId');
+    if (!myId) {
+        myId = 'Courier_' + Math.random().toString(36).substr(2, 6);
+        sessionStorage.setItem('aeroId', myId);
+    }
+
+    // Database Reference for all players
+    const playersRef = db.ref('aero_terra/players');
+
+    // Automatically remove my data from Firebase if I close the tab
+    playersRef.child(myId).onDisconnect().remove();
 
     // ==========================================
     // 2. PHASER GAME LOGIC
     // ==========================================
     
-    let player;
+    let player;         // My local green square
     let cursors;
     let iceZone;
+    let otherPlayers = {}; // A dictionary to store the red squares of other players
 
-    // A. PRELOAD: Load assets (We will just use generated shapes for now)
-    function preload() {
-        // We aren't loading external images yet, so this is empty.
-    }
+    function preload() { }
 
-    // B. CREATE: Build the world
     function create() {
-        // 1. Create a giant world map (1800 x 1200)
-        this.physics.world.setBounds(0, 0, 1800, 1200);
+        const scene = this; // Store reference to the scene for Firebase callbacks
 
-        // 2. Add some grid lines to the background so we can see movement
-        this.add.grid(900, 600, 1800, 1200, 50, 50, 0x333333).setAltFillStyle(0x444444);
+        // 1. Build the World
+        scene.physics.world.setBounds(0, 0, 1800, 1200);
+        scene.add.grid(900, 600, 1800, 1200, 50, 50, 0x333333).setAltFillStyle(0x444444);
 
-        // 3. Create the "Ice Zone" (A slippery blue rectangle)
-        iceZone = this.add.rectangle(1200, 300, 400, 400, 0x00aaff, 0.5);
-        this.physics.add.existing(iceZone, true); // 'true' means it doesn't move
+        // 2. Add Ice Zone
+        iceZone = scene.add.rectangle(1200, 300, 400, 400, 0x00aaff, 0.5);
+        scene.physics.add.existing(iceZone, true);
 
-        // 4. Create the Player (A bright green square)
-        player = this.add.rectangle(300, 300, 30, 30, 0x00ffcc);
-        this.physics.add.existing(player);
+        // 3. Create MY Player (Green)
+        // Spawn randomly near the center so players don't spawn exactly on top of each other
+        const startX = 850 + Math.random() * 100;
+        const startY = 550 + Math.random() * 100;
         
-        // Give the player physics properties
-        player.body.setCollideWorldBounds(true); // Don't fall off the edge of the world
-        player.body.setDrag(1500); // Standard friction (Stops quickly when you let go of keys)
-        player.body.setMaxVelocity(300); // Top speed
+        player = scene.add.rectangle(startX, startY, 30, 30, 0x00ffcc);
+        scene.physics.add.existing(player);
+        player.body.setCollideWorldBounds(true);
+        player.body.setMaxVelocity(300);
 
-        // 5. Tell the Camera to follow the player
-        this.cameras.main.setBounds(0, 0, 1800, 1200);
-        this.cameras.main.startFollow(player, true, 0.1, 0.1); // Smooth following
+        // Save old position to prevent spamming the database when standing still
+        player.oldPosition = { x: player.x, y: player.y };
 
-        // 6. Turn on the Arrow Keys
-        cursors = this.input.keyboard.createCursorKeys();
+        // 4. Camera & Controls
+        scene.cameras.main.setBounds(0, 0, 1800, 1200);
+        scene.cameras.main.startFollow(player, true, 0.1, 0.1);
+        cursors = scene.input.keyboard.createCursorKeys();
+
+        // ---------------------------------------------------------
+        // MULTIPLAYER LISTENERS (Receiving data from Firebase)
+        // ---------------------------------------------------------
+
+        // When ANY player joins or moves (including ourselves)
+        playersRef.on('value', (snapshot) => {
+            const playersData = snapshot.val() || {};
+            let onlineCount = 0;
+
+            Object.keys(playersData).forEach((id) => {
+                onlineCount++;
+                const data = playersData[id];
+
+                // If this is NOT me, we need to draw/update a red square
+                if (id !== myId) {
+                    if (!otherPlayers[id]) {
+                        // NEW PLAYER JOINED: Create a red square for them
+                        otherPlayers[id] = scene.add.rectangle(data.x, data.y, 30, 30, 0xff4444);
+                    } else {
+                        // EXISTING PLAYER MOVED: Update their position
+                        otherPlayers[id].setPosition(data.x, data.y);
+                    }
+                }
+            });
+
+            // Update the UI text
+            document.getElementById('player-count').innerText = `Couriers Online: ${onlineCount}`;
+
+            // Remove players who disconnected (their ID is in our dictionary, but no longer in Firebase)
+            Object.keys(otherPlayers).forEach((id) => {
+                if (!playersData[id]) {
+                    otherPlayers[id].destroy(); // Remove sprite from screen
+                    delete otherPlayers[id];    // Remove from dictionary
+                }
+            });
+        });
     }
 
-    // C. UPDATE: The 60fps Game Loop
     function update() {
+        if (!player) return;
+
         // 1. MOVEMENT LOGIC
-        // Instead of directly changing X/Y, we apply "Acceleration" (Force)
-        if (cursors.left.isDown) {
-            player.body.setAccelerationX(-1500);
-        } else if (cursors.right.isDown) {
-            player.body.setAccelerationX(1500);
-        } else {
-            player.body.setAccelerationX(0);
-        }
+        if (cursors.left.isDown) player.body.setAccelerationX(-1500);
+        else if (cursors.right.isDown) player.body.setAccelerationX(1500);
+        else player.body.setAccelerationX(0);
 
-        if (cursors.up.isDown) {
-            player.body.setAccelerationY(-1500);
-        } else if (cursors.down.isDown) {
-            player.body.setAccelerationY(1500);
-        } else {
-            player.body.setAccelerationY(0);
-        }
+        if (cursors.up.isDown) player.body.setAccelerationY(-1500);
+        else if (cursors.down.isDown) player.body.setAccelerationY(1500);
+        else player.body.setAccelerationY(0);
 
-        // 2. SCIENCE MECHANICS: Friction Check
-        // Are we standing on the blue ice?
+        // 2. SCIENCE MECHANICS: Friction
         const onIce = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), iceZone.getBounds());
+        player.body.setDrag(onIce ? 50 : 1500);
+
+        // ---------------------------------------------------------
+        // MULTIPLAYER BROADCASTER (Sending data to Firebase)
+        // ---------------------------------------------------------
         
-        if (onIce) {
-            // ICE PHYSICS: Very low friction. Hard to stop!
-            player.body.setDrag(50); 
-        } else {
-            // NORMAL PHYSICS: High friction. Stops quickly.
-            player.body.setDrag(1500); 
+        // Only send data to Firebase if we actually moved! (Saves bandwidth)
+        const xChanged = Math.abs(player.x - player.oldPosition.x) > 1;
+        const yChanged = Math.abs(player.y - player.oldPosition.y) > 1;
+
+        if (xChanged || yChanged) {
+            playersRef.child(myId).set({
+                x: player.x,
+                y: player.y
+            });
+            // Update old position so we don't spam the database next frame
+            player.oldPosition = { x: player.x, y: player.y };
         }
     }
-
 
     // ==========================================
-    // 3. PHASER BOOTSTRAP (Start the engine)
+    // 3. PHASER BOOTSTRAP
     // ==========================================
     const config = {
         type: Phaser.AUTO,
-        width: 800,   // The size of the "window" the player sees
+        width: 800,
         height: 600,
-        parent: 'game-container', // Put the canvas inside our div
+        parent: 'game-container',
         physics: {
-            default: 'arcade', // The physics engine
-            arcade: {
-                gravity: { y: 0 }, // Top-down game, so no gravity pulling us down
-                debug: false
-            }
+            default: 'arcade',
+            arcade: { gravity: { y: 0 }, debug: false }
         },
-        scene: {
-            preload: preload,
-            create: create,
-            update: update
-        }
+        scene: { preload: preload, create: create, update: update }
     };
 
     const game = new Phaser.Game(config);
