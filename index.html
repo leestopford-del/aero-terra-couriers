@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aero-Terra Couriers | Dispatch Hub</title>
+    <style>
+        body { 
+            background: #0d1117; 
+            color: #c9d1d9; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+            margin: 0; 
+            background-image: radial-gradient(circle at center, #161b22 0%, #0d1117 100%);
+        }
+        
+        .terminal-card { 
+            background: #161b22; 
+            border: 2px solid #30363d; 
+            border-radius: 12px; 
+            padding: 40px; 
+            text-align: center; 
+            max-width: 500px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        h1 { color: #00ffcc; margin-top: 0; text-transform: uppercase; letter-spacing: 2px; }
+        
+        .status-box {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-size: 0.9rem;
+            color: #8b949e;
+        }
+
+        .btn-launch { 
+            background: transparent; 
+            color: #00ffcc; 
+            border: 2px solid #00ffcc; 
+            padding: 15px 30px; 
+            font-size: 1.2rem; 
+            font-weight: bold; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            text-decoration: none;
+            transition: all 0.2s ease-in-out;
+            display: inline-block;
+        }
+
+        .btn-launch:hover { 
+            background: #00ffcc; 
+            color: #0d1117; 
+            box-shadow: 0 0 15px rgba(0, 255, 204, 0.4);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="terminal-card">
+        <h1>Aero-Terra Hub</h1>
+        <p>Welcome, Courier. The frontier awaits.</p>
+        
+        <div class="status-box">
+            <b>Current Syllabus Directives:</b><br>
+            Stage 6 Science: Air Resistance (4.2), Water Resistance (4.3), Friction (4.4)
+        </div>
+
+        <a href="aero-terra.html" class="btn-launch">INITIATE ENGINE TEST</a>
+    </div>
+
+</body>
+</html>
