@@ -20,14 +20,16 @@
         .btn-launch { background: #00ffcc; color: #000; font-weight: bold; border: none; padding: 12px 25px; font-size: 1.1rem; border-radius: 4px; cursor: pointer; transition: all 0.2s; }
         .btn-launch:hover { background: #fff; box-shadow: 0 0 15px #00ffcc; }
         
-        .bobbing-vehicle { width: 50px; height: 50px; background: #00ffcc; margin: 0 auto 20px auto; border-radius: 8px; animation: bob 2s infinite ease-in-out; box-shadow: 0 10px 15px rgba(0,255,204,0.2); }
+        .bobbing-vehicle { width: 50px; height: 50px; background: #00ffcc; margin: 0 auto 20px auto; border-radius: 8px; animation: bob 2s infinite ease-in-out; }
         @keyframes bob { 0% { transform: translateY(0); } 50% { transform: translateY(-15px); } 100% { transform: translateY(0); } }
 
         #game-wrapper { display: none; width: 100vw; height: 100vh; position: relative; }
         #game-container { width: 100%; height: 100%; }
         
         #ui { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; border: 2px solid #00ffcc; z-index: 100; pointer-events: none; }
-        #inventory { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; border: 2px solid #ffcc00; z-index: 100; }
+        
+        /* Garage is now hidden by default! */
+        #inventory { display: none; position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.9); padding: 15px; border-radius: 8px; border: 2px solid #ffcc00; z-index: 100; box-shadow: 0 0 20px rgba(255,204,0,0.4); }
         .equip-btn { display: block; width: 100%; margin: 5px 0; padding: 8px; background: #333; color: white; border: 1px solid #777; cursor: pointer; border-radius: 4px; }
         .equip-btn.active { background: #ffcc00; color: black; font-weight: bold; }
         
@@ -40,7 +42,7 @@
         <div class="terminal">
             <div class="bobbing-vehicle"></div>
             <h1>Aero-Terra Dispatch</h1>
-            <p>Stage 6 Physics Simulator</p>
+            <p>Phase 2: Tilemap Engine</p>
             <div class="input-group">
                 <input type="text" id="courier-name" placeholder="Enter Courier Name" autocomplete="off">
             </div>
@@ -52,13 +54,13 @@
         <div id="ui">
             <h3 style="margin: 0; color: #00ffcc;" id="ui-name">Courier</h3>
             <p id="player-count">Couriers Online: 1</p>
-            <p style="color: #ff4444; font-weight: bold;" id="mission-status">Mission: Pick up the Package</p>
+            <p style="color: #ff4444; font-weight: bold;" id="mission-status">Mission: Pick up the Crate</p>
             <p>Score: <span id="score">0</span></p>
             <p style="color: #ffcc00; font-size: 0.9rem; max-width: 250px;" id="warning-text"></p>
         </div>
 
         <div id="inventory">
-            <h4 style="margin: 0 0 10px 0; color: #ffcc00;">Garage (Equip)</h4>
+            <h4 style="margin: 0 0 10px 0; color: #ffcc00;">📍 ALBY'S GARAGE</h4>
             <button class="equip-btn active" onclick="equipItem('none')">Standard Tires</button>
             <button class="equip-btn" onclick="equipItem('shell')">Streamlined Shell (Wind)</button>
             <button class="equip-btn" onclick="equipItem('cleats')">Spiked Cleats (Ice)</button>
@@ -96,7 +98,6 @@
     function loginAndLaunch() {
         const nameInput = document.getElementById('courier-name').value.trim();
         if (!nameInput) { alert("Please enter a Courier Name!"); return; }
-
         myName = nameInput;
         myId = 'Courier_' + Math.random().toString(36).substr(2, 6);
         playersRef.child(myId).onDisconnect().remove();
@@ -115,21 +116,18 @@
     }
 
     const npcLines = [
-        "The wind in the canyon is howling! It's too strong for standard engines.",
-        "Air resistance pushes against moving objects. The wider the object, the harder the push.",
-        "Equip the Streamlined Shell in your garage so the air flows around you, allowing your engine to push through!"
+        "Welcome to my Garage! You'll need different parts for different terrains.",
+        "That river to the South has a nasty current. You'll wash away without a Hull.",
+        "Drive your vehicle inside this building whenever you need to swap parts!"
     ];
     let dialogueStep = 0;
 
     function bootPhaserEngine() {
-        let player, cursors, spacebar;
-        let iceZone, windZone, waterZone;
+        let player, cursors, spacebar, mapLayer, tilemap;
         let packageObj, dropZoneObj, npcObj;
-        let walls;
         let otherPlayers = {}; 
 
         function preload() { 
-            // PHASE 2: LOADING IMAGES INSTEAD OF SHAPES
             this.load.image('vehicle', 'https://labs.phaser.io/assets/sprites/car90.png');
             this.load.image('npc', 'https://labs.phaser.io/assets/sprites/spaceman.png');
             this.load.image('crate', 'https://labs.phaser.io/assets/sprites/box-item-boxed.png');
@@ -139,53 +137,102 @@
         function create() {
             const scene = this;
 
-            scene.physics.world.setBounds(0, 0, 3600, 3600);
-            scene.add.grid(1800, 1800, 3600, 3600, 100, 100, 0x222222).setAltFillStyle(0x2a2a2a);
+            // 1. GENERATE DYNAMIC TILESET TEXTURE (72x72 tiles)
+            let graphics = scene.make.graphics();
+            graphics.fillStyle(0x2a2a2a); graphics.fillRect(0, 0, 72, 72);    // 0: Hub Ground
+            graphics.fillStyle(0xaaaaaa); graphics.fillRect(72, 0, 72, 72);   // 1: Wind Canyon
+            graphics.fillStyle(0xaaffff); graphics.fillRect(144, 0, 72, 72);  // 2: Ice
+            graphics.fillStyle(0x0044ff); graphics.fillRect(216, 0, 72, 72);  // 3: River Water
+            graphics.fillStyle(0x553311); graphics.fillRect(288, 0, 72, 72);  // 4: Solid Wall/Rock
+            graphics.generateTexture('tileset', 360, 72);
 
-            iceZone = scene.add.rectangle(3000, 1800, 1200, 1200, 0x00aaff, 0.3);
-            windZone = scene.add.rectangle(1800, 600, 1200, 800, 0xffffff, 0.1);
-            waterZone = scene.add.rectangle(1800, 3000, 1200, 800, 0x0044ff, 0.4);
+            // 2. PROCEDURAL MAP GENERATION (50x50 Grid = 3600x3600 pixels)
+            const mapData = [];
+            for (let y = 0; y < 50; y++) {
+                const row = [];
+                for (let x = 0; x < 50; x++) {
+                    let tile = 0; // Default ground
+
+                    // Outer map boundaries
+                    if (x === 0 || x === 49 || y === 0 || y === 49) tile = 4;
+                    
+                    // WIND CANYON (North)
+                    else if (y < 15 && x >= 15 && x <= 34) {
+                        tile = 1; 
+                        if (x === 15 || x === 34) tile = 4; // Canyon walls
+                    }
+                    
+                    // MEANDERING RIVER (South)
+                    else if (y > 34 && x >= 15 && x <= 34) {
+                        // Math.sin creates the curve of the river!
+                        let riverCenter = 24 + Math.floor(Math.sin(y * 0.4) * 4);
+                        if (x >= riverCenter - 3 && x <= riverCenter + 3) {
+                            tile = 3; // Water
+                            if (Math.random() < 0.05) tile = 4; // 5% chance of a rock in the river!
+                        }
+                        if (x === 15 || x === 34) tile = 4; // River canyon walls
+                    }
+                    
+                    // ICE LAKE (East)
+                    else if (y >= 15 && y <= 34 && x > 34) {
+                        tile = 2; // Ice
+                        if (y === 15 || y === 34) tile = 4;
+                    }
+                    
+                    // SOLID UNUSED AREA (West)
+                    else if (x < 15) { tile = 4; }
+
+                    // HUB GATES
+                    else if (y === 15 && x >= 15 && x <= 34) { if (x < 22 || x > 27) tile = 4; } // North Gate
+                    else if (y === 34 && x >= 15 && x <= 34) { if (x < 22 || x > 27) tile = 4; } // South Gate
+                    else if (x === 34 && y >= 15 && y <= 34) { if (y < 22 || y > 27) tile = 4; } // East Gate
+
+                    // PHYSICAL GARAGE BUILDING (Inside Hub)
+                    else if (x >= 18 && x <= 22 && y >= 18 && y <= 21) {
+                        if (x === 20 && y === 21) tile = 0; // The Door
+                        else tile = 4; // Garage Walls
+                    }
+
+                    row.push(tile);
+                }
+                mapData.push(row);
+            }
+
+            // 3. BUILD THE TILEMAP
+            tilemap = scene.make.tilemap({ data: mapData, tileWidth: 72, tileHeight: 72 });
+            const tiles = tilemap.addTilesetImage('tileset');
+            mapLayer = tilemap.createLayer(0, tiles, 0, 0);
             
-            scene.physics.add.existing(iceZone, true);
-            scene.physics.add.existing(windZone, true);
-            scene.physics.add.existing(waterZone, true);
+            // Tell the physics engine that tile ID 4 (Brown Rock) is solid
+            tilemap.setCollision(4);
 
-            scene.add.text(1800, 250, "WIND CANYON\n(Air Resistance)", { fontSize: '32px', fill: '#fff', align: 'center' }).setOrigin(0.5);
-            scene.add.text(3000, 1800, "ICE LAKE\n(Low Friction)", { fontSize: '32px', fill: '#fff', align: 'center' }).setOrigin(0.5);
-            scene.add.text(1800, 3300, "RAGING RIVER\n(Water Resistance)", { fontSize: '32px', fill: '#fff', align: 'center' }).setOrigin(0.5);
+            // Map Labels
+            scene.add.text(1800, 350, "WIND CANYON", { fontSize: '32px', fill: '#000' }).setOrigin(0.5);
+            scene.add.text(3200, 1800, "ICE LAKE", { fontSize: '32px', fill: '#000' }).setOrigin(0.5);
 
-            walls = scene.physics.add.staticGroup();
-            function buildWall(x, y, w, h) { walls.add(scene.add.rectangle(x, y, w, h, 0x555555)); }
+            // 4. OBJECT PLACEMENT (Coordinates converted to grid pixels)
+            packageObj = scene.physics.add.sprite(25 * 72, 25 * 72, 'crate').setScale(1.5);
+            dropZoneObj = scene.physics.add.sprite(25 * 72, 8 * 72, 'dropzone').setScale(1.5);
             
-            buildWall(1350, 1000, 700, 40); 
-            buildWall(2250, 1000, 700, 40); 
-            buildWall(1350, 2600, 700, 40); 
-            buildWall(2250, 2600, 700, 40); 
-            buildWall(2600, 1350, 40, 700); 
-            buildWall(2600, 2250, 40, 700); 
-            buildWall(1000, 1800, 40, 1600); 
+            npcObj = scene.physics.add.sprite(20 * 72, 20 * 72, 'npc');
+            scene.add.text(20 * 72, 19.5 * 72, "Alby", { fontSize: '20px', fill: '#fff' }).setOrigin(0.5);
 
-            // SPONSOR THE OBJECTS WITH IMAGES
-            packageObj = scene.physics.add.sprite(1700, 1900, 'crate').setScale(1.5);
-            dropZoneObj = scene.physics.add.sprite(1800, 500, 'dropzone').setScale(1.5);
-            
-            npcObj = scene.physics.add.sprite(1700, 1100, 'npc');
-            scene.add.text(1700, 1050, "Alby (Mechanic)", { fontSize: '20px', fill: '#fff' }).setOrigin(0.5);
-
-            player = scene.physics.add.sprite(1800, 1800, 'vehicle');
+            player = scene.physics.add.sprite(24 * 72, 28 * 72, 'vehicle');
             player.body.setCollideWorldBounds(true);
             player.body.setMaxVelocity(400); 
             player.oldPosition = { x: player.x, y: player.y };
 
-            scene.physics.add.collider(player, walls);
+            // COLLISION: Player bounces off Rocks and Walls
+            scene.physics.add.collider(player, mapLayer);
 
             scene.cameras.main.setBounds(0, 0, 3600, 3600);
             scene.cameras.main.startFollow(player, true, 0.1, 0.1);
-            scene.cameras.main.setZoom(0.65); 
+            scene.cameras.main.setZoom(0.7); 
             
             cursors = scene.input.keyboard.createCursorKeys();
             spacebar = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
+            // MULTIPLAYER LOGIC
             playersRef.on('value', (snapshot) => {
                 const playersData = snapshot.val() || {};
                 let onlineCount = 0;
@@ -194,7 +241,6 @@
                     const data = playersData[id];
                     if (id !== myId) {
                         if (!otherPlayers[id]) { 
-                            // Load other players with the vehicle image too, tinted red so you can tell them apart
                             otherPlayers[id] = scene.add.sprite(data.x, data.y, 'vehicle').setTint(0xff4444); 
                             otherPlayers[id].nameTag = scene.add.text(data.x, data.y - 40, data.name, { fontSize: '16px', fill: '#fff' }).setOrigin(0.5);
                         } else { 
@@ -218,43 +264,49 @@
         function update() {
             if (!player) return;
 
-            const onIce = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), iceZone.getBounds());
-            const inWind = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), windZone.getBounds());
-            const inWater = Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), waterZone.getBounds());
+            // NEW PHYSICS CHECK: What tile am I currently driving on?
+            const currentTile = tilemap.getTileAtWorldXY(player.x, player.y);
+            const tileIndex = currentTile ? currentTile.index : 0;
+
+            const inWind = (tileIndex === 1);
+            const onIce = (tileIndex === 2);
+            const inWater = (tileIndex === 3);
+
+            // GARAGE CHECK: Are we inside the physical Garage walls? (x: 18-22, y: 18-21)
+            const inGarage = (player.x > 18*72 && player.x < 22*72 && player.y > 18*72 && player.y < 21*72);
+            document.getElementById('inventory').style.display = inGarage ? 'block' : 'none';
             
             const warningText = document.getElementById('warning-text');
             warningText.innerText = "";
-            
             let controlLock = false;
 
+            // PHYSICS LOGIC
             if (inWind && currentEquip !== 'shell') {
                 controlLock = true;
-                warningText.innerText = "WARNING: Engine overwhelmed by Air Resistance! Equip Shell!";
+                warningText.innerText = "WARNING: Air Resistance! Equip Shell!";
                 player.angle += 15; 
                 player.body.setAcceleration(0, 0); 
-                // WIND FIX: Now blows you Negative X (West) back towards the Hub
-                player.body.velocity.x -= 30; 
+                player.body.velocity.x -= 30; // Blown West
             }
 
             if (onIce && currentEquip !== 'cleats') {
                 controlLock = true;
-                warningText.innerText = "WARNING: Zero Friction! Tires spinning out! Equip Cleats!";
+                warningText.innerText = "WARNING: Zero Friction! Equip Cleats!";
                 player.angle += 20; 
-                player.body.setDrag(5); 
+                player.body.setDrag(5); // Slide
             } else if (!inWind) {
-                // Remove angle lock so car can face the direction it drives!
-                player.body.setDrag(1500); 
+                player.body.setDrag(1500); // Normal driving grip
             }
 
             if (inWater && currentEquip !== 'hull') {
                 controlLock = true;
-                warningText.innerText = "WARNING: Water Resistance too high! Sinking! Equip Hull!";
+                warningText.innerText = "WARNING: Swept away by current! Equip Hull!";
                 player.angle += 5; 
                 player.body.setAcceleration(0, 0);
-                player.body.velocity.y += 20; 
+                player.body.velocity.y += 30; // Swept South down the river
             }
 
-            // --- VISUAL ROTATION & MOVEMENT LOGIC ---
+            // MOVEMENT CONTROLS
             if (!controlLock) {
                 if (cursors.left.isDown) { player.body.setAccelerationX(-1500); player.angle = 180; }
                 else if (cursors.right.isDown) { player.body.setAccelerationX(1500); player.angle = 0; }
@@ -265,6 +317,7 @@
                 else player.body.setAccelerationY(0);
             }
 
+            // CORE LOOP
             if (Phaser.Geom.Intersects.RectangleToRectangle(player.getBounds(), packageObj.getBounds()) && !hasPackage) {
                 hasPackage = true; packageObj.setVisible(false);
                 document.getElementById('mission-status').innerText = "Mission: Deliver to the Target in Wind Canyon!";
@@ -277,6 +330,7 @@
                 setTimeout(() => { packageObj.setVisible(true); }, 2000);
             }
 
+            // NPC DIALOGUE
             if (Phaser.Math.Distance.Between(player.x, player.y, npcObj.x, npcObj.y) < 150) {
                 document.getElementById('dialogue-box').style.display = 'block';
                 document.getElementById('dialogue-text').innerText = npcLines[dialogueStep];
@@ -287,6 +341,7 @@
                 document.getElementById('dialogue-box').style.display = 'none'; dialogueStep = 0;
             }
 
+            // MULTIPLAYER SYNC
             const xChanged = Math.abs(player.x - player.oldPosition.x) > 1;
             const yChanged = Math.abs(player.y - player.oldPosition.y) > 1;
             if (xChanged || yChanged || controlLock) { 
